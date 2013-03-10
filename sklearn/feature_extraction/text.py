@@ -23,6 +23,8 @@ import warnings
 import numpy as np
 import scipy.sparse as sp
 
+from progressbar import ProgressBar,Percentage,Bar
+
 from ..base import BaseEstimator, TransformerMixin
 from ..externals.six.moves import xrange
 from ..preprocessing import normalize
@@ -683,6 +685,8 @@ class CountVectorizer(BaseEstimator, VectorizerMixin):
 
         analyze = self.build_analyzer()
 
+        print "vectorize documents in fit_transform"
+        pbar = ProgressBar(widgets=[Percentage(), Bar()],maxval=len(raw_documents)).start()
         for n_doc, doc in enumerate(raw_documents):
             term_count_current = Counter(analyze(doc))
             term_counts.update(term_count_current)
@@ -700,6 +704,8 @@ class CountVectorizer(BaseEstimator, VectorizerMixin):
                     row_ind.append(n_doc)
                     col_ind.append(vocab[term])
                     feature_values.append(count)
+            pbar.update(n_doc+1)
+        pbar.finish()
         n_doc += 1
 
         if fixed_vocab:
@@ -812,6 +818,8 @@ class CountVectorizer(BaseEstimator, VectorizerMixin):
         values = _make_int_array()
 
         analyze = self.build_analyzer()
+        print "vectorize documents in transfrom"
+        pbar = ProgressBar(widgets=[Percentage(), Bar()],maxval=len(raw_documents)).start()
         for n_doc, doc in enumerate(raw_documents):
             term_counts = Counter(analyze(doc))
 
@@ -820,6 +828,8 @@ class CountVectorizer(BaseEstimator, VectorizerMixin):
                     i_indices.append(n_doc)
                     j_indices.append(self.vocabulary_[term])
                     values.append(count)
+            pbar.update(n_doc+1)
+        pbar.finish()
         n_doc += 1
         return self._term_counts_to_matrix(n_doc, i_indices, j_indices, values)
 
