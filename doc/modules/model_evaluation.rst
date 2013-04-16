@@ -72,7 +72,7 @@ Accuracy score
 ---------------
 The :func:`accuracy_score` function computes the
 `accuracy <http://en.wikipedia.org/wiki/Accuracy_and_precision>`_, the fraction
-of correct predictions. In multilabel classification,
+(default) or the number of correct predictions. In multilabel classification,
 the function returns the subset accuracy:
 the entire set of labels for a sample must be entirely correct
 or the sample has an accuracy of zero.
@@ -96,6 +96,8 @@ where :math:`1(x)` is the `indicator function
   >>> y_true = [0, 1, 2, 3]
   >>> accuracy_score(y_true, y_pred)
   0.5
+  >>> accuracy_score(y_true, y_pred, normalize=False)
+  2
 
   In the multilabel case with binary indicator format:
 
@@ -200,7 +202,7 @@ Classification report
 ---------------------
 The :func:`classification_report` function builds a text report showing the
 main classification metrics. Here a small example with custom ``target_names``
-and infered labels:
+and inferred labels:
 
    >>> from sklearn.metrics import classification_report
    >>> y_true = [0, 1, 2, 2, 0]
@@ -664,6 +666,8 @@ The following figure shows an example of such ROC curve.
   * See :ref:`example_applications_plot_species_distribution_modeling.py`
     for an example of receiver operating characteristic (ROC) metric to
     model species distribution.
+
+.. _zero_one_loss:
 
 Zero one loss
 --------------

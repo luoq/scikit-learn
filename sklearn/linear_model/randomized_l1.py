@@ -8,7 +8,6 @@ sparse Logistic Regression
 # License: BSD Style.
 import itertools
 from abc import ABCMeta, abstractmethod
-import sys
 
 import numpy as np
 from scipy.sparse import issparse
@@ -23,11 +22,6 @@ from ..utils import (as_float_array, check_random_state, safe_asarray,
                      check_arrays, safe_mask)
 from .least_angle import lars_path, LassoLarsIC
 from .logistic import LogisticRegression
-
-PY3 = sys.version_info[0] == 3
-
-if PY3:
-    basestring = str
 
 
 ###############################################################################
@@ -61,14 +55,13 @@ def _resample_model(estimator_func, X, y, scaling=.5, n_resampling=200,
     return scores_
 
 
-class BaseRandomizedLinearModel(BaseEstimator, TransformerMixin):
+class BaseRandomizedLinearModel(six.with_metaclass(ABCMeta, BaseEstimator, TransformerMixin)):
     """Base class to implement randomized linear models for feature selection
 
     This implements the strategy by Meinshausen and Buhlman:
     stability selection with randomized sampling, and random re-weighting of
     the penalty.
     """
-    __metaclass__ = ABCMeta
 
     @abstractmethod
     def __init__(self):
@@ -249,7 +242,7 @@ class RandomizedLasso(BaseRandomizedLinearModel):
         explosion of memory consumption when more jobs get dispatched
         than CPUs can process. This parameter can be:
 
-            - None, in which case all the jobs are immediatly
+            - None, in which case all the jobs are immediately
               created and spawned. Use this for lightweight and
               fast-running jobs, to avoid delays due to on-demand
               spawning of the jobs
@@ -346,7 +339,7 @@ def _randomized_logistic(X, y, weights, mask, C=1., verbose=False,
         weight_dia = sparse.dia_matrix((1 - weights, 0), (size, size))
         X = X * weight_dia
     else:
-        X = (1 - weights) * X
+        X *= (1 - weights)
 
     C = np.atleast_1d(np.asarray(C, dtype=np.float))
     scores = np.zeros((X.shape[1], len(C)), dtype=np.bool)
@@ -411,7 +404,7 @@ class RandomizedLogisticRegression(BaseRandomizedLinearModel):
         explosion of memory consumption when more jobs get dispatched
         than CPUs can process. This parameter can be:
 
-            - None, in which case all the jobs are immediatly
+            - None, in which case all the jobs are immediately
               created and spawned. Use this for lightweight and
               fast-running jobs, to avoid delays due to on-demand
               spawning of the jobs

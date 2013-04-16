@@ -341,7 +341,7 @@ class HashingVectorizer(BaseEstimator, VectorizerMixin):
         or more letters characters (punctuation is completely ignored
         and always treated as a token separator).
 
-    n_features : interger, optional, (2 ** 20) by default
+    n_features : integer, optional, (2 ** 20) by default
         The number of features (columns) in the output matrices. Small numbers
         of features are likely to cause hash collisions, but large numbers
         will cause larger coefficient dimensions in linear learners.
@@ -451,8 +451,7 @@ class CountVectorizer(BaseEstimator, VectorizerMixin):
 
     If you do not provide an a-priori dictionary and you do not use an analyzer
     that does some kind of feature selection then the number of features will
-    be equal to the vocabulary size found by analysing the data. The default
-    analyzer does simple stop word filtering for English.
+    be equal to the vocabulary size found by analysing the data.
 
     Parameters
     ----------
@@ -582,7 +581,7 @@ class CountVectorizer(BaseEstimator, VectorizerMixin):
                  stop_words=None, token_pattern=r"(?u)\b\w\w+\b",
                  ngram_range=(1, 1), analyzer='word',
                  max_df=1.0, min_df=1, max_features=None,
-                 vocabulary=None, binary=False, dtype=long):
+                 vocabulary=None, binary=False, dtype=np.int64):
         self.input = input
         self.charset = charset
         self.charset_error = charset_error
@@ -622,8 +621,13 @@ class CountVectorizer(BaseEstimator, VectorizerMixin):
             i_indices = np.frombuffer(i_indices, dtype=np.intc)
         if len(j_indices) > 0:
             j_indices = np.frombuffer(j_indices, dtype=np.intc)
+
         if self.dtype == np.intc and len(values) > 0:
             values = np.frombuffer(values, dtype=np.intc)
+        else:
+            # In Python 3.2, SciPy 0.10.1, the coo_matrix ctor won't accept an
+            # array.array.
+            values = np.asarray(values, dtype=self.dtype)
 
         shape = (n_doc, max(six.itervalues(self.vocabulary_)) + 1)
         spmatrix = sp.coo_matrix((values, (i_indices, j_indices)),
@@ -719,15 +723,17 @@ class CountVectorizer(BaseEstimator, VectorizerMixin):
             max_df = self.max_df
             min_df = self.min_df
 
-            max_doc_count = (max_df if isinstance(max_df, numbers.Integral)
-                                    else max_df * n_doc)
-            min_doc_count = (min_df if isinstance(min_df, numbers.Integral)
-                                    else min_df * n_doc)
+            max_doc_count = (max_df
+                             if isinstance(max_df, numbers.Integral)
+                             else max_df * n_doc)
+            min_doc_count = (min_df
+                             if isinstance(min_df, numbers.Integral)
+                             else min_df * n_doc)
 
             # filter out stop words: terms that occur in almost all documents
             if max_doc_count < n_doc or min_doc_count > 1:
                 stop_words = set(t for t, dc in six.iteritems(document_counts)
-                                   if not min_doc_count <= dc <= max_doc_count)
+                                 if not min_doc_count <= dc <= max_doc_count)
             else:
                 stop_words = set()
 
@@ -823,7 +829,7 @@ class CountVectorizer(BaseEstimator, VectorizerMixin):
         for n_doc, doc in enumerate(raw_documents):
             term_counts = Counter(analyze(doc))
 
-            for term, count in term_counts.iteritems():
+            for term, count in six.iteritems(term_counts):
                 if term in self.vocabulary_:
                     i_indices.append(n_doc)
                     j_indices.append(self.vocabulary_[term])
@@ -878,9 +884,7 @@ class CountVectorizer(BaseEstimator, VectorizerMixin):
 
 def _make_int_array():
     """Construct an array.array of a type suitable for scipy.sparse indices."""
-    # This is nasty: Python 2.x wants str (bytes) for the typecodes, but 3.x
-    # wants str (unicode). Neither will accept the other string type.
-    return array.array("i" if six.PY3 else b"i")
+    return array.array(str("i"))
 
 
 class TfidfTransformer(BaseEstimator, TransformerMixin):
@@ -1156,8 +1160,9 @@ class TfidfVectorizer(CountVectorizer):
                  preprocessor=None, tokenizer=None, analyzer='word',
                  stop_words=None, token_pattern=r"(?u)\b\w\w+\b",
                  ngram_range=(1, 1), max_df=1.0, min_df=1,
-                 max_features=None, vocabulary=None, binary=False, dtype=long,
-                 norm='l2', use_idf=True, smooth_idf=True, sublinear_tf=False):
+                 max_features=None, vocabulary=None, binary=False,
+                 dtype=np.int64, norm='l2', use_idf=True, smooth_idf=True,
+                 sublinear_tf=False):
 
         super(TfidfVectorizer, self).__init__(
             input=input, charset=charset, charset_error=charset_error,

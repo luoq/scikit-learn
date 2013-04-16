@@ -8,12 +8,14 @@ from __future__ import print_function
 #         Gael Varoquaux <gael.varoquaux@normalesup.org>
 # License: BSD Style.
 
+from abc import ABCMeta, abstractmethod
+from collections import Mapping, namedtuple
+from functools import partial, reduce
+from itertools import product
+import numbers
+import operator
 import time
 import warnings
-import numbers
-from itertools import product
-from collections import namedtuple
-from abc import ABCMeta, abstractmethod
 
 import numpy as np
 
@@ -21,28 +23,27 @@ from .base import BaseEstimator, is_classifier, clone
 from .base import MetaEstimatorMixin
 from .cross_validation import check_cv
 from .externals.joblib import Parallel, delayed, logger
+from .externals import six
 from .utils import safe_mask, check_random_state
 from .utils.validation import _num_samples, check_arrays
 from .metrics import SCORERS, Scorer
+
 
 __all__ = ['GridSearchCV', 'ParameterGrid', 'fit_grid_point',
            'ParameterSampler', 'RandomizedSearchCV']
 
 
 class ParameterGrid(object):
-    """Generators on the combination of the various parameter lists given.
+    """Grid of parameters with a discrete number of values for each.
+
+    Can be used to iterate over parameter value combinations with the
+    Python built-in function iter.
 
     Parameters
     ----------
-    param_grid: dict of string to sequence
+    param_grid : dict of string to sequence
         The parameter grid to explore, as a dictionary mapping estimator
         parameters to sequences of allowed values.
-
-    Returns
-    -------
-    params: dict of string to any
-        **Yields** dictionaries mapping each estimator parameter to one of its
-        allowed values.
 
     Examples
     --------
@@ -55,24 +56,40 @@ class ParameterGrid(object):
     See also
     --------
     :class:`GridSearchCV`:
-        uses ``ParameterGrid`` to perform a full parallelized grid search.
+        uses ``ParameterGrid`` to perform a full parallelized parameter search.
     """
 
     def __init__(self, param_grid):
+        if isinstance(param_grid, Mapping):
+            # wrap dictionary in a singleton list
+            # XXX Why? The behavior when passing a list is undocumented,
+            # but not doing this breaks one of the tests.
+            param_grid = [param_grid]
         self.param_grid = param_grid
 
     def __iter__(self):
-        param_grid = self.param_grid
-        if hasattr(param_grid, 'items'):
-            # wrap dictionary in a singleton list
-            param_grid = [param_grid]
-        for p in param_grid:
+        """Iterate over the points in the grid.
+
+        Returns
+        -------
+        params : iterator over dict of string to any
+            Yields dictionaries mapping each estimator parameter to one of its
+            allowed values.
+        """
+        for p in self.param_grid:
             # Always sort the keys of a dictionary, for reproducibility
             items = sorted(p.items())
             keys, values = zip(*items)
             for v in product(*values):
                 params = dict(zip(keys, v))
                 yield params
+
+    def __len__(self):
+        """Number of points on the grid."""
+        # Product function that can handle iterables (np.product can't).
+        product = partial(reduce, operator.mul)
+        return sum(product(len(v) for v in p.values())
+                   for p in self.param_grid)
 
 
 class IterGrid(ParameterGrid):
@@ -104,7 +121,7 @@ class IterGrid(ParameterGrid):
     See also
     --------
     :class:`GridSearchCV`:
-        uses ``IterGrid`` to perform a full parallelized grid search.
+        uses ``IterGrid`` to perform a full parallelized parameter search.
     """
 
     def __init__(self, param_grid):
@@ -167,6 +184,10 @@ class ParameterSampler(object):
                 else:
                     params[k] = v[rnd.randint(len(v))]
             yield params
+
+    def __len__(self):
+        """Number of points that will be sampled."""
+        return self.n_iter
 
 
 def fit_grid_point(X, y, base_clf, clf_params, train, test, scorer,
@@ -296,22 +317,14 @@ def _check_param_grid(param_grid):
                                  "list.")
 
 
-def _has_one_grid_point(param_grid):
-    if hasattr(param_grid, 'items'):
-        param_grid = [param_grid]
-
-    for p in param_grid:
-        for v in p.values():
-            if len(v) > 1:
-                return False
-
-    return True
+_CVScoreTuple = namedtuple('_CVScoreTuple',
+                           ('parameters', 'mean_validation_score',
+                            'cv_validation_scores'))
 
 
-class BaseSearchCV(BaseEstimator, MetaEstimatorMixin):
+class BaseSearchCV(six.with_metaclass(ABCMeta, BaseEstimator, MetaEstimatorMixin)):
     """Base class for hyper parameter search with cross-validation.
     """
-    __metaclass__ = ABCMeta
 
     @abstractmethod
     def __init__(self, estimator, scoring=None, loss_func=None,
@@ -332,7 +345,9 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin):
         self._check_estimator()
 
     def score(self, X, y=None):
-        """Returns the mean accuracy on the given test data and labels.
+        """Returns the score on the given test data and labels, if the search
+        estimator has been refit. The ``score`` function of the best estimator
+        is used, or the ``scoring`` parameter where unavailable.
 
         Parameters
         ----------
@@ -356,6 +371,22 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin):
         y_predicted = self.predict(X)
         return self.scorer(y, y_predicted)
 
+    @property
+    def predict(self):
+        return self.best_estimator_.predict
+
+    @property
+    def predict_proba(self):
+        return self.best_estimator_.predict_proba
+
+    @property
+    def decision_function(self):
+        return self.best_estimator_.decision_function
+
+    @property
+    def transform(self):
+        return self.best_estimator_.transform
+
     def _check_estimator(self):
         """Check that estimator can be fitted and score can be computed."""
         if (not hasattr(self.estimator, 'fit') or
@@ -372,13 +403,6 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin):
                     "If no scoring is specified, the estimator passed "
                     "should have a 'score' method. The estimator %s "
                     "does not." % self.estimator)
-
-    def _set_methods(self):
-        """Create predict and  predict_proba if present in best estimator."""
-        if hasattr(self.best_estimator_, 'predict'):
-            self.predict = self.best_estimator_.predict
-        if hasattr(self.best_estimator_, 'predict_proba'):
-            self.predict_proba = self.best_estimator_.predict_proba
 
     def _fit(self, X, y, parameter_iterator, **params):
         """Actual fitting,  performing the search over parameters."""
@@ -400,7 +424,7 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin):
                           "Either use strings or score objects."
                           "The relevant new parameter is called ''scoring''.")
             scorer = Scorer(self.score_func)
-        elif isinstance(self.scoring, basestring):
+        elif isinstance(self.scoring, six.string_types):
             scorer = SCORERS[self.scoring]
         else:
             scorer = self.scoring
@@ -434,20 +458,22 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin):
 
         scores = list()
         cv_scores = list()
-        for start in range(0, n_fits, n_folds):
+        for grid_start in range(0, n_fits, n_folds):
             n_test_samples = 0
-            mean_validation_score = 0
+            score = 0
             these_points = list()
             for this_score, clf_params, this_n_test_samples in \
-                    out[start:start + n_folds]:
+                    out[grid_start:grid_start + n_folds]:
                 these_points.append(this_score)
                 if self.iid:
                     this_score *= this_n_test_samples
-                mean_validation_score += this_score
-                n_test_samples += this_n_test_samples
+                    n_test_samples += this_n_test_samples
+                score += this_score
             if self.iid:
-                mean_validation_score /= float(n_test_samples)
-            scores.append((mean_validation_score, clf_params))
+                score /= float(n_test_samples)
+            else:
+                score /= float(n_folds)
+            scores.append((score, clf_params))
             cv_scores.append(these_points)
 
         cv_scores = np.asarray(cv_scores)
@@ -482,21 +508,17 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin):
             else:
                 best_estimator.fit(X, **self.fit_params)
             self.best_estimator_ = best_estimator
-            self._set_methods()
 
         # Store the computed scores
-        CVScoreTuple = namedtuple('CVScoreTuple', ('parameters',
-                                                   'mean_validation_score',
-                                                   'cv_validation_scores'))
         self.cv_scores_ = [
-            CVScoreTuple(clf_params, score, all_scores)
+            _CVScoreTuple(clf_params, score, all_scores)
             for clf_params, (score, _), all_scores
             in zip(parameter_iterator, scores, cv_scores)]
         return self
 
 
 class GridSearchCV(BaseSearchCV):
-    """Grid search on the parameters of an estimator.
+    """Exhaustive search over specified parameter values for an estimator.
 
     Important members are fit, predict.
 
@@ -513,7 +535,8 @@ class GridSearchCV(BaseSearchCV):
         Dictionary with parameters names (string) as keys and lists of
         parameter settings to try as values, or a list of such
         dictionaries, in which case the grids spanned by each dictionary
-        in the list are explored.
+        in the list are explored. This enables searching over any sequence
+        of parameter settings.
 
     scoring : string or callable, optional
         Either one of either a string ("zero_one", "f1", "roc_auc", ... for
@@ -524,16 +547,16 @@ class GridSearchCV(BaseSearchCV):
     fit_params : dict, optional
         Parameters to pass to the fit method.
 
-    n_jobs: int, optional
+    n_jobs : int, optional
         Number of jobs to run in parallel (default 1).
 
-    pre_dispatch: int, or string, optional
+    pre_dispatch : int, or string, optional
         Controls the number of jobs that get dispatched during parallel
         execution. Reducing this number can be useful to avoid an
         explosion of memory consumption when more jobs get dispatched
         than CPUs can process. This parameter can be:
 
-            - None, in which case all the jobs are immediatly
+            - None, in which case all the jobs are immediately
               created and spawned. Use this for lightweight and
               fast-running jobs, to avoid delays due to on-demand
               spawning of the jobs
@@ -544,22 +567,22 @@ class GridSearchCV(BaseSearchCV):
             - A string, giving an expression as a function of n_jobs,
               as in '2*n_jobs'
 
-    iid: boolean, optional
+    iid : boolean, optional
         If True, the data is assumed to be identically distributed across
         the folds, and the loss minimized is the total loss per sample,
         and not the mean loss across the folds.
 
-    cv : integer or crossvalidation generator, optional
-        If an integer is passed, it is the number of fold (default 3).
-        Specific crossvalidation objects can be passed, see
+    cv : integer or cross-validation generator, optional
+        If an integer is passed, it is the number of folds (default 3).
+        Specific cross-validation objects can be passed, see
         sklearn.cross_validation module for the list of possible objects
 
-    refit: boolean
+    refit : boolean
         Refit the best estimator with the entire dataset.
         If "False", it is impossible to make predictions using
         this GridSearchCV instance after fitting.
 
-    verbose: integer
+    verbose : integer
         Controls the verbosity: the higher, the more messages.
 
     Examples
@@ -588,16 +611,16 @@ class GridSearchCV(BaseSearchCV):
 
             * ``parameters``, a dict of parameter settings
             * ``mean_validation_score``, the mean score over the
-             cross-validation folds
+              cross-validation folds
             * ``cv_validation_scores``, the list of scores for each fold
 
     `best_estimator_` : estimator
-        Estimator that was choosen by grid search, i.e. estimator
+        Estimator that was chosen by the search, i.e. estimator
         which gave highest score (or smallest loss if specified)
         on the left out data.
 
     `best_score_` : float
-        score of best_estimator on the left out data.
+        Score of best_estimator on the left out data.
 
     `best_params_` : dict
         Parameter setting that gave the best results on the hold out data.
@@ -612,8 +635,8 @@ class GridSearchCV(BaseSearchCV):
     reasons if individual jobs take very little time, but may raise errors if
     the dataset is large and not enough memory is available.  A workaround in
     this case is to set `pre_dispatch`. Then, the memory is copied only
-    `pre_dispatch` many times. A reasonable value for `pre_dispatch` is 2 *
-    `n_jobs`.
+    `pre_dispatch` many times. A reasonable value for `pre_dispatch` is `2 *
+    n_jobs`.
 
     See Also
     ---------
@@ -639,7 +662,7 @@ class GridSearchCV(BaseSearchCV):
     @property
     def grid_scores_(self):
         warnings.warn("grid_scores_ is deprecated and will be removed in 0.15."
-                      " Use estimator_scores_ instead.", DeprecationWarning)
+                      " Use cv_scores_ instead.", DeprecationWarning)
         return self.cv_scores_
 
     def fit(self, X, y=None, **params):
@@ -657,26 +680,7 @@ class GridSearchCV(BaseSearchCV):
             None for unsupervised learning.
 
         """
-        estimator = self.estimator
-        cv = self.cv
-        cv = check_cv(cv, X, y, classifier=is_classifier(estimator))
-
-        grid = ParameterGrid(self.param_grid)
-        base_clf = clone(self.estimator)
-
-        # Return early if there is only one grid point.
-        if _has_one_grid_point(self.param_grid):
-            params = next(iter(grid))
-            base_clf.set_params(**params)
-            if y is not None:
-                base_clf.fit(X, y)
-            else:
-                base_clf.fit(X)
-            self.best_estimator_ = base_clf
-            self._set_methods()
-            return self
-
-        return self._fit(X, y, grid, **params)
+        return self._fit(X, y, ParameterGrid(self.param_grid), **params)
 
 
 class RandomizedSearchCV(BaseSearchCV):
@@ -693,16 +697,16 @@ class RandomizedSearchCV(BaseSearchCV):
 
     Parameters
     ----------
-    estimator: object type that implements the "fit" and "predict" methods
+    estimator : object type that implements the "fit" and "predict" methods
         A object of that type is instantiated for each parameter setting.
 
-    param_distribution: dict
+    param_distribution : dict
         Dictionary with parameters names (string) as keys and distributions
         or lists of parameters to try. Distributions must provide a ``rvs``
         method for sampling (such as those from scipy.stats.distributions).
         If a list is given, it is sampled uniformly.
 
-    n_iter: int, default=10
+    n_iter : int, default=10
         Number of parameter settings that are sampled. n_iter trades
         off runtime vs qualitiy of the solution.
 
@@ -715,16 +719,16 @@ class RandomizedSearchCV(BaseSearchCV):
     fit_params : dict, optional
         Parameters to pass to the fit method.
 
-    n_jobs: int, optional
+    n_jobs : int, optional
         Number of jobs to run in parallel (default 1).
 
-    pre_dispatch: int, or string, optional
+    pre_dispatch : int, or string, optional
         Controls the number of jobs that get dispatched during parallel
         execution. Reducing this number can be useful to avoid an
         explosion of memory consumption when more jobs get dispatched
         than CPUs can process. This parameter can be:
 
-            - None, in which case all the jobs are immediatly
+            - None, in which case all the jobs are immediately
               created and spawned. Use this for lightweight and
               fast-running jobs, to avoid delays due to on-demand
               spawning of the jobs
@@ -735,22 +739,22 @@ class RandomizedSearchCV(BaseSearchCV):
             - A string, giving an expression as a function of n_jobs,
               as in '2*n_jobs'
 
-    iid: boolean, optional
+    iid : boolean, optional
         If True, the data is assumed to be identically distributed across
         the folds, and the loss minimized is the total loss per sample,
         and not the mean loss across the folds.
 
-    cv : integer or crossvalidation generator, optional
-        If an integer is passed, it is the number of fold (default 3).
-        Specific crossvalidation objects can be passed, see
+    cv : integer or cross-validation generator, optional
+        If an integer is passed, it is the number of folds (default 3).
+        Specific cross-validation objects can be passed, see
         sklearn.cross_validation module for the list of possible objects
 
-    refit: boolean
+    refit : boolean
         Refit the best estimator with the entire dataset.
         If "False", it is impossible to make predictions using
         this RandomizedSearchCV instance after fitting.
 
-    verbose: integer
+    verbose : integer
         Controls the verbosity: the higher, the more messages.
 
 
@@ -763,11 +767,11 @@ class RandomizedSearchCV(BaseSearchCV):
 
             * ``parameters``, a dict of parameter settings
             * ``mean_validation_score``, the mean score over the
-             cross-validation folds
+              cross-validation folds
             * ``cv_validation_scores``, the list of scores for each fold
 
     `best_estimator_` : estimator
-        Estimator that was choosen by search, i.e. estimator
+        Estimator that was chosen by the search, i.e. estimator
         which gave highest score (or smallest loss if specified)
         on the left out data.
 
@@ -789,8 +793,8 @@ class RandomizedSearchCV(BaseSearchCV):
     reasons if individual jobs take very little time, but may raise errors if
     the dataset is large and not enough memory is available.  A workaround in
     this case is to set `pre_dispatch`. Then, the memory is copied only
-    `pre_dispatch` many times. A reasonable value for `pre_dispatch` is 2 *
-    `n_jobs`.
+    `pre_dispatch` many times. A reasonable value for `pre_dispatch` is `2 *
+    n_jobs`.
 
     See Also
     --------

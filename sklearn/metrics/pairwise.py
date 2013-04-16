@@ -76,10 +76,10 @@ def check_pairwise_arrays(X, Y):
     Returns
     -------
     safe_X : {array-like, sparse matrix}, shape = [n_samples_a, n_features]
-        An array equal to X, guarenteed to be a numpy array.
+        An array equal to X, guaranteed to be a numpy array.
 
     safe_Y : {array-like, sparse matrix}, shape = [n_samples_b, n_features]
-        An array equal to Y if Y was not None, guarenteed to be a numpy array.
+        An array equal to Y if Y was not None, guaranteed to be a numpy array.
         If Y was None, safe_Y will be a pointer to X.
 
     """
@@ -573,7 +573,7 @@ def pairwise_distances(X, Y=None, metric="euclidean", n_jobs=1, **kwds):
     computed. If the input is a distances matrix, it is returned instead.
 
     This method provides a safe way to take a distance matrix as input, while
-    preserving compatability with many other algorithms that take a vector
+    preserving compatibility with many other algorithms that take a vector
     array.
 
     If Y is given (default is None), then the returned matrix is the pairwise
@@ -722,26 +722,28 @@ def kernel_metrics():
 
 
 KERNEL_PARAMS = {
+    "additive_chi2": (),
     "chi2": (),
-    "exp_chi2": set(("gamma", )),
+    "cosine": (),
+    "exp_chi2": frozenset(["gamma"]),
     "linear": (),
-    "rbf": set(("gamma",)),
-    "sigmoid": set(("gamma", "coef0")),
-    "polynomial": set(("gamma", "degree", "coef0")),
-    "poly": set(("gamma", "degree", "coef0")),
-    "cosine": set(), }
+    "poly": frozenset(["gamma", "degree", "coef0"]),
+    "polynomial": frozenset(["gamma", "degree", "coef0"]),
+    "rbf": frozenset(["gamma"]),
+    "sigmoid": frozenset(["gamma", "coef0"]),
+}
 
 
 def pairwise_kernels(X, Y=None, metric="linear", filter_params=False,
                      n_jobs=1, **kwds):
-    """ Compute the kernel between arrays X and optional array Y.
+    """Compute the kernel between arrays X and optional array Y.
 
     This method takes either a vector array or a kernel matrix, and returns
     a kernel matrix. If the input is a vector array, the kernels are
     computed. If the input is a kernel matrix, it is returned instead.
 
     This method provides a safe way to take a kernel matrix as input, while
-    preserving compatability with many other algorithms that take a vector
+    preserving compatibility with many other algorithms that take a vector
     array.
 
     If Y is given (default is None), then the returned matrix is the pairwise
@@ -826,4 +828,4 @@ def pairwise_kernels(X, Y=None, metric="linear", filter_params=False,
                     K[j][i] = K[i][j]
         return K
     else:
-        raise AttributeError("Unknown metric %s" % metric)
+        raise ValueError("Unknown kernel %r" % metric)

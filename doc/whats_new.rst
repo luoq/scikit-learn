@@ -51,6 +51,9 @@ Changelog
      converts their ``coef_`` into a sparse matrix, meaning stored models
      trained using these estimators can be made much more compact.
 
+   - :class:`linear_model.SGDClassifier` now produces multiclass probability
+     estimates when trained under log loss or modified Huber loss.
+
    - Hyperlinks to documentation in example code on the website by
      `Martin Luessi`_.
 
@@ -62,6 +65,13 @@ Changelog
      :class:`tree.DecisionTreeRegressor` and all derived ensemble estimators
      now supports percentage values. By `Gilles Louppe`_.
 
+   - Performance improvements in :class:`isotonic.IsotonicRegression` by
+     Nelle Varoquaux.
+
+   - :func:`metrics.accuracy_score` has an option normalize to return
+     the fraction or the number of correctly classified sample
+     by `Arnaud Joly`_.
+
 
 API changes summary
 -------------------
@@ -71,6 +81,12 @@ API changes summary
 
    - Fixed bug in :class:`KFold` causing imperfect class balance in some
      cases. By `Alexandre Gramfort`_ and Tadej Janež.
+
+   - :class:`sklearn.decomposition.KernelPCA` now always returns output with
+     ``n_components`` components, unless the new parameter ``remove_zero_eig``
+     is set to ``True``. This new behavior is consistent with the way
+     kernel PCA was always documented; previously, the removal of components
+     with zero eigenvalues was tacitly performed on all data.
 
 
 .. _changes_0_13_1:
@@ -175,6 +191,9 @@ New Estimator Classes
      :func:`manifold.spectral_embedding`, implementing the "laplacian
      eigenmaps" transformation for nonlinear dimensionality reduction by Wei
      Li. See :ref:`spectral_embedding` in the user guide.
+
+   - :class:`isotonic.IsotonicRegression` by `Fabian Pedregosa`_, `Alexandre Gramfort`_
+     and Nelle Varoquaux.
 
 
 Changelog

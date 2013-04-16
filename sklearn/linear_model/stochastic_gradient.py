@@ -17,6 +17,7 @@ from ..base import BaseEstimator, RegressorMixin
 from ..feature_selection.selector_mixin import SelectorMixin
 from ..utils import array2d, atleast2d_or_csr, check_arrays, deprecated
 from ..utils.extmath import safe_sparse_dot
+from ..externals import six
 
 from .sgd_fast import plain_sgd as plain_sgd
 from ..utils.seq_dataset import ArrayDataset, CSRDataset
@@ -44,10 +45,8 @@ DEFAULT_EPSILON = 0.1
 """Default value of ``epsilon`` parameter. """
 
 
-class BaseSGD(BaseEstimator, SparseCoefMixin):
+class BaseSGD(six.with_metaclass(ABCMeta, BaseEstimator, SparseCoefMixin)):
     """Base class for SGD classification and regression."""
-
-    __metaclass__ = ABCMeta
 
     def __init__(self, loss, penalty='l2', alpha=0.0001, C=1.0,
                  l1_ratio=0.15, fit_intercept=True, n_iter=5, shuffle=False,
@@ -358,10 +357,11 @@ class BaseSGDClassifier(BaseSGD, LinearClassifierMixin):
         # Allocate datastructures from input arguments
         y_ind = np.searchsorted(self.classes_, y)   # XXX use a LabelBinarizer?
         self._expanded_class_weight = compute_class_weight(self.class_weight,
-                                                           self.classes_, y_ind)
+                                                           self.classes_,
+                                                           y_ind)
         sample_weight = self._validate_sample_weight(sample_weight, n_samples)
 
-        if self.coef_ is None:
+        if self.coef_ is None or coef_init is not None:
             self._allocate_parameter_mem(n_classes, n_features,
                                          coef_init, intercept_init)
 
@@ -389,6 +389,9 @@ class BaseSGDClassifier(BaseSGD, LinearClassifierMixin):
     def _fit(self, X, y, alpha, C, loss, learning_rate,
              coef_init=None, intercept_init=None, class_weight=None,
              sample_weight=None):
+        if hasattr(self, "classes_"):
+            self.classes_ = None
+
         if class_weight is not None:
             warnings.warn("Using 'class_weight' as a parameter to the 'fit'"
                           "method is deprecated and will be removed in 0.13. "
@@ -651,7 +654,12 @@ class SGDClassifier(BaseSGDClassifier, SelectorMixin):
     def predict_proba(self, X):
         """Probability estimates.
 
-        Probability estimates are only supported for binary classification.
+        Multiclass probability estimates are derived from binary (one-vs.-rest)
+        estimates by simple normalization, as recommended by Zadrozny and
+        Elkan.
+
+        Binary probability estimates for loss="modified_huber" are given by
+        (clip(decision_function(X), -1, 1) + 1) / 2.
 
         Parameters
         ----------
@@ -665,34 +673,59 @@ class SGDClassifier(BaseSGDClassifier, SelectorMixin):
 
         References
         ----------
+        Zadrozny and Elkan, "Transforming classifier scores into multiclass
+        probability estimates", SIGKDD'02,
+        http://www.research.ibm.com/people/z/zadrozny/kdd2002-Transf.pdf
 
         The justification for the formula in the loss="modified_huber"
         case is in the appendix B in:
         http://jmlr.csail.mit.edu/papers/volume2/zhang02c/zhang02c.pdf
         """
-        if len(self.classes_) != 2:
-            raise NotImplementedError("predict_(log_)proba only supported"
-                                      " for binary classification")
-
-        scores = self.decision_function(X)
-        proba = np.ones((scores.shape[0], 2), dtype=np.float64)
         if self.loss == "log":
-            proba[:, 1] = 1. / (1. + np.exp(-scores))
+            return self._predict_proba_lr(X)
 
         elif self.loss == "modified_huber":
-            proba[:, 1] = (np.clip(scores, -1, 1) + 1) / 2.
+            binary = (len(self.classes_) == 2)
+            scores = self.decision_function(X)
+
+            if binary:
+                prob2 = np.ones((scores.shape[0], 2))
+                prob = prob2[:, 1]
+            else:
+                prob = scores
+
+            np.clip(scores, -1, 1, prob)
+            prob += 1.
+            prob /= 2.
+
+            if binary:
+                prob2[:, 0] -= prob
+                prob = prob2
+            else:
+                # the above might assign zero to all classes, which doesn't
+                # normalize neatly; work around this to produce uniform
+                # probabilities
+                prob_sum = prob.sum(axis=1)
+                all_zero = (prob_sum == 0)
+                if np.any(all_zero):
+                    prob[all_zero, :] = 1
+                    prob_sum[all_zero] = len(self.classes_)
+
+                # normalize
+                prob /= prob_sum.reshape((prob.shape[0], -1))
+
+            return prob
 
         else:
             raise NotImplementedError("predict_(log_)proba only supported when"
                                       " loss='log' or loss='modified_huber' "
-                                      "(%s given)" % self.loss)
-        proba[:, 0] -= proba[:, 1]
-        return proba
+                                      "(%r given)" % self.loss)
 
     def predict_log_proba(self, X):
         """Log of probability estimates.
 
-        Log probability estimates are only supported for binary classification.
+        When loss="modified_huber", probability estimates may be hard zeros
+        and ones, so taking the logarithm is not possible.
 
         Parameters
         ----------

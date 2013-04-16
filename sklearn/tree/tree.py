@@ -150,13 +150,12 @@ def export_graphviz(decision_tree, out_file=None, feature_names=None):
     return out_file
 
 
-class BaseDecisionTree(BaseEstimator, SelectorMixin):
+class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator, SelectorMixin)):
     """Base class for decision trees.
 
     Warning: This class should not be used directly.
     Use derived classes instead.
     """
-    __metaclass__ = ABCMeta
 
     @abstractmethod
     def __init__(self,
@@ -438,9 +437,9 @@ class BaseDecisionTree(BaseEstimator, SelectorMixin):
     def feature_importances_(self):
         """Return the feature importances.
 
-        The importance of a feature is computed as the
-        (normalized) total reduction of the criterion brought by that
-        feature.  It is also known as the Gini importance [4]_.
+        The importance of a feature is computed as the (normalized) total
+        reduction of the criterion brought by that feature.
+        It is also known as the Gini importance [4]_.
 
         Returns
         -------
@@ -515,10 +514,10 @@ class DecisionTreeClassifier(BaseDecisionTree, ClassifierMixin):
         output (for multi-output problems).
 
     `feature_importances_` : array of shape = [n_features]
-        The feature importances. The higher, the more important the feature.
-        The importance of a feature is computed as the
-        (normalized) total reduction of the criterion brought by that
-        feature.  It is also known as the Gini importance [4]_.
+        The feature importances. The higher, the more important the
+        feature. The importance of a feature is computed as the (normalized)
+        total reduction of the criterion brought by that feature.  It is also
+        known as the Gini importance [4]_.
 
     See also
     --------
@@ -702,10 +701,11 @@ class DecisionTreeRegressor(BaseDecisionTree, RegressorMixin):
         The underlying Tree object.
 
     `feature_importances_` : array of shape = [n_features]
-        The feature importances. The higher, the more important the feature.
+        The feature importances.
+        The higher, the more important the feature.
         The importance of a feature is computed as the
-        (normalized) total reduction of the criterion brought by that
-        feature.  It is also known as the Gini importance [4]_.
+        (normalized)total reduction of the criterion brought
+        by that feature. It is also known as the Gini importance [4]_.
 
     See also
     --------
