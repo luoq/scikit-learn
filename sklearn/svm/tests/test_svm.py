@@ -175,6 +175,21 @@ def test_svr():
         clf.fit(diabetes.data, diabetes.target)
         assert_greater(clf.score(diabetes.data, diabetes.target), 0.02)
 
+        
+def test_liblinear_svr():
+    """
+    Test Liblinear SVR
+    """
+
+    diabetes = datasets.load_diabetes()
+    for clf in (svm.LinearSVR(C=1.0,epsilon=0.1),
+                svm.LinearSVR(C=10.,epsilon=0.1),
+                svm.LinearSVR(loss="l1",C=10.,epsilon=0.1),
+                svm.LinearSVR(loss="l1",C=100.,epsilon=0.1),
+				):
+        clf.fit(diabetes.data, diabetes.target)
+        assert_greater(clf.score(diabetes.data, diabetes.target), 0.1)
+
 
 def test_svr_errors():
     X = [[0.0], [1.0]]
