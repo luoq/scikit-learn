@@ -564,7 +564,7 @@ class BaseSVC(BaseLibSVM, ClassifierMixin):
         return self.classes_
 
 
-class LibLinearMixin():
+class LibLinearMixin(object):
     """Base for classes binding liblinear (dense and sparse versions)"""
 
     _solver_type_dict = {
