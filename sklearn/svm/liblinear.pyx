@@ -13,7 +13,7 @@ np.import_array()
 
 def train_wrap(np.ndarray[np.float64_t, ndim=2, mode='c'] X,
                np.ndarray[np.float64_t, ndim=1, mode='c'] Y,
-               int solver_type, double eps, double bias, double C,
+               int solver_type, double eps, double p, double bias, double C,
                np.ndarray[np.float64_t, ndim=1] class_weight,
                unsigned random_seed):
     """
@@ -29,7 +29,7 @@ def train_wrap(np.ndarray[np.float64_t, ndim=2, mode='c'] X,
 
     cdef np.ndarray[np.int32_t, ndim=1, mode='c'] \
         class_weight_label = np.arange(class_weight.shape[0], dtype=np.int32)
-    param = set_parameter(solver_type, eps, C, class_weight.shape[0],
+    param = set_parameter(solver_type, eps, p, C, class_weight.shape[0],
                           class_weight_label.data, class_weight.data, random_seed)
 
     error_msg = check_parameter(problem, param)
@@ -69,7 +69,7 @@ cdef _csr_train_wrap(np.int32_t n_features,
                      np.ndarray[np.int32_t,   ndim=1, mode='c'] X_indices,
                      np.ndarray[np.int32_t,   ndim=1, mode='c'] X_indptr,
                      np.ndarray[np.float64_t, ndim=1, mode='c'] Y,
-                     int solver_type, double eps, double bias, double C,
+                     int solver_type, double eps, double p, double bias, double C,
                      np.ndarray[np.float64_t, ndim=1] class_weight,
                      unsigned random_seed):
     cdef parameter *param
@@ -85,7 +85,7 @@ cdef _csr_train_wrap(np.int32_t n_features,
                               X_indices.data, X_indptr.shape,
                               X_indptr.data, Y.data, n_features, bias)
 
-    param = set_parameter(solver_type, eps, C, class_weight.shape[0],
+    param = set_parameter(solver_type, eps, p, C, class_weight.shape[0],
                           class_weight_label.data, class_weight.data, random_seed)
 
     error_msg = check_parameter(problem, param)
@@ -119,7 +119,7 @@ cdef _csr_train_wrap(np.int32_t n_features,
     return w
 
 
-def csr_train_wrap(X, Y, solver_type, eps, bias, C, class_weight,
+def csr_train_wrap(X, Y, solver_type, eps, p, bias, C, class_weight,
                    unsigned random_seed):
     """
     Wrapper for train.
@@ -127,7 +127,7 @@ def csr_train_wrap(X, Y, solver_type, eps, bias, C, class_weight,
     X matrix is given in CSR sparse format.
     """
     return _csr_train_wrap(X.shape[1], X.data, X.indices, X.indptr, Y,
-                           solver_type, eps, bias, C, class_weight,
+                           solver_type, eps, p, bias, C, class_weight,
                            random_seed)
 
 
